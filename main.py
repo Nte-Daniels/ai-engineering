@@ -1,4 +1,8 @@
 import asyncio
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from fastapi import Request
 
 from fastapi import FastAPI, HTTPException
 from openai import OpenAI
@@ -8,6 +12,9 @@ import os
 load_dotenv()
 
 app = FastAPI()
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.get("/")
@@ -15,7 +22,8 @@ def health_check():
     return {"status": "ok"}
 
 @app.get("/ask")
-async def ask(question: str):
+@limiter.limit("5/minute")
+async def ask(request: Request, question: str):
     if not question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
     
